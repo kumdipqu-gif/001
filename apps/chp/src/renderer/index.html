@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: blob:; connect-src http://127.0.0.1:* http://localhost:* http://[::1]:*; font-src 'self' data:;" />
+  <title>chp</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="rail">
+      <div class="brand"><div class="brand-mark">C</div><div class="brand-name">chp</div></div>
+      <button class="rail-btn active" data-view="chat" title="聊天"><span>✦</span></button>
+      <button class="rail-btn" data-view="work" title="工作台"><span>▦</span></button>
+      <button class="rail-btn" data-view="files" title="文件"><span>⌘</span></button>
+      <button class="rail-btn" data-view="tasks" title="任务"><span>✓</span></button>
+      <div class="rail-spacer"></div>
+      <button class="rail-btn" data-view="settings" title="设置"><span>⚙</span></button>
+    </aside>
+
+    <aside class="sidebar">
+      <div class="sidebar-top">
+        <button id="newChat" class="primary-button">＋ 新对话</button>
+        <div class="status-pill"><span class="status-dot"></span>完全本地</div>
+      </div>
+      <div class="search-wrap"><input id="sidebarSearch" placeholder="搜索对话或项目" /></div>
+      <div class="section-label">最近</div>
+      <div id="chatList" class="chat-list"></div>
+      <div class="section-label">工作区</div>
+      <button id="chooseWorkspace" class="workspace-card">
+        <span class="folder-icon">▰</span>
+        <span><strong id="workspaceName">选择项目文件夹</strong><small id="workspacePath">未选择</small></span>
+      </button>
+      <div class="sidebar-bottom">
+        <div class="mini-card"><strong id="modelName">未配置本地模型</strong><small id="endpointName">localhost only</small></div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="view-tabs">
+          <button class="view-tab active" data-view="chat">聊天</button>
+          <button class="view-tab" data-view="work">工作台</button>
+          <button class="view-tab" data-view="files">文件</button>
+          <button class="view-tab" data-view="tasks">任务</button>
+        </div>
+        <div class="top-actions"><span class="offline-badge">OFFLINE</span><button id="openSettings" class="icon-button">⚙</button></div>
+      </header>
+
+      <section id="view-chat" class="view active">
+        <div class="chat-header">
+          <div><h1 id="chatTitle">新对话</h1><p>本机模型 · 本地历史 · 外网已阻断</p></div>
+          <div class="header-actions"><button id="clearChat" class="ghost-button">清空</button></div>
+        </div>
+        <div id="messages" class="messages">
+          <div class="empty-state" id="emptyState">
+            <div class="hero-mark">C</div>
+            <h2>今天想一起做什么？</h2>
+            <p>可以聊天、分析项目、读写文件、运行命令，所有数据都保存在当前 chp 文件夹。</p>
+            <div class="suggestions">
+              <button data-prompt="分析当前项目结构并给出改进建议">分析当前项目</button>
+              <button data-prompt="帮我制定一个清晰可执行的工作计划">制定工作计划</button>
+              <button data-prompt="检查项目中最值得优先修复的问题">检查项目问题</button>
+            </div>
+          </div>
+        </div>
+        <div class="composer-wrap">
+          <div class="composer">
+            <textarea id="prompt" rows="1" placeholder="给 chp 发消息…  Shift+Enter 换行"></textarea>
+            <div class="composer-row">
+              <div class="composer-tools"><button id="attachWorkspace" class="tool-button">⌘ 项目上下文</button><button id="insertFile" class="tool-button">＋ 文件</button></div>
+              <button id="send" class="send-button">➤</button>
+            </div>
+          </div>
+          <div class="composer-note">chp 不会连接公网；模型请求仅允许 localhost / 127.0.0.1 / ::1</div>
+        </div>
+      </section>
+
+      <section id="view-work" class="view">
+        <div class="work-grid">
+          <div class="panel project-panel">
+            <div class="panel-title"><div><small>PROJECT</small><h2>项目工作台</h2></div><button id="refreshProject" class="icon-button">↻</button></div>
+            <div id="projectSummary" class="project-summary">选择一个本地项目文件夹开始工作。</div>
+            <div class="metric-grid"><div><strong id="fileCount">0</strong><span>文件</span></div><div><strong id="taskCount">0</strong><span>任务</span></div><div><strong id="runningCount">0</strong><span>运行中</span></div></div>
+            <div class="section-label">快捷工作</div>
+            <div class="quick-grid"><button data-action="scan">项目扫描</button><button data-action="review">代码审查</button><button data-action="plan">生成计划</button><button data-action="docs">整理文档</button></div>
+          </div>
+          <div class="panel activity-panel">
+            <div class="panel-title"><div><small>ACTIVITY</small><h2>执行台</h2></div></div>
+            <div class="command-bar"><input id="commandInput" placeholder="在项目目录运行本地命令，例如 npm test"/><button id="runCommand" class="primary-button compact">运行</button></div>
+            <pre id="terminalOutput" class="terminal-output">chp local terminal ready.</pre>
+          </div>
+          <div class="panel inspector-panel">
+            <div class="panel-title"><div><small>INSPECTOR</small><h2>上下文</h2></div></div>
+            <div class="inspector-card"><span>模型</span><strong id="inspectorModel">—</strong></div>
+            <div class="inspector-card"><span>项目</span><strong id="inspectorWorkspace">—</strong></div>
+            <div class="inspector-card"><span>网络</span><strong class="safe-text">仅本机</strong></div>
+            <div class="inspector-card"><span>数据</span><strong>便携目录</strong></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-files" class="view">
+        <div class="files-layout">
+          <div class="file-browser panel"><div class="panel-title"><div><small>FILES</small><h2>项目文件</h2></div></div><div class="file-search"><input id="fileSearch" placeholder="文件名 / 内容搜索"/><button id="fileSearchBtn">搜索</button></div><div id="fileList" class="file-list"></div><div id="searchResults" class="search-results"></div></div>
+          <div class="editor-panel panel"><div class="editor-title"><span id="editorPath">未打开文件</span><button id="saveFile" class="primary-button compact">保存</button></div><textarea id="editor" spellcheck="false" placeholder="选择文本文件进行查看和编辑"></textarea></div>
+        </div>
+      </section>
+
+      <section id="view-tasks" class="view">
+        <div class="tasks-page"><div class="tasks-head"><div><small>TASKS</small><h1>本地任务</h1></div><button id="addTask" class="primary-button">＋ 新任务</button></div><div id="taskBoard" class="task-board"></div></div>
+      </section>
+
+      <section id="view-settings" class="view">
+        <div class="settings-page">
+          <div class="settings-head"><small>SETTINGS</small><h1>本地模型设置</h1><p>只接受本机回环地址。推荐 Ollama、LM Studio、llama.cpp 或其他 OpenAI Compatible 本地服务。</p></div>
+          <div class="settings-card"><label>本地接口地址<input id="settingEndpoint" placeholder="http://127.0.0.1:11434/v1" /></label><label>模型名<input id="settingModel" placeholder="qwen3:8b / local-model" /></label><label>温度<input id="settingTemperature" type="number" min="0" max="2" step="0.1" /></label><label>系统提示词<textarea id="settingSystem" rows="5"></textarea></label><button id="saveSettings" class="primary-button">保存设置</button><div id="settingsMessage" class="settings-message"></div></div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="./app.js"></script>
+</body>
+</html>
