@@ -1,7 +1,8 @@
 name: Import LobeHub v2.2.14
 
 on:
-  push:
+  issues:
+    types: [opened]
   workflow_dispatch:
 
 permissions:
@@ -9,7 +10,7 @@ permissions:
 
 jobs:
   import:
-    if: github.actor != 'github-actions[bot]'
+    if: startsWith(github.event.issue.title, '[IMPORT] LobeHub v2.2.14') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout target repository
