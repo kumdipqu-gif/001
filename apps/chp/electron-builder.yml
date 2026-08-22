@@ -7,9 +7,9 @@ directories:
 files:
   - src/**/*
   - package.json
-extraResources:
+extraFiles:
   - from: portable.flag
-    to: ../portable.flag
+    to: portable.flag
 win:
   executableName: chp
   icon: build/chp.ico
