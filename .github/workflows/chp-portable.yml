@@ -26,6 +26,9 @@ jobs:
         with:
           node-version: '24.11.1'
 
+      - name: Install pnpm for monorepo dependency collection
+        run: npm install -g pnpm@10.33.0
+
       - name: Install dependencies
         id: install
         working-directory: apps/chp
@@ -112,7 +115,7 @@ jobs:
           smoke=${{ steps.smoke.outcome }}
           package=${{ steps.package.outcome }}
           upload=${{ steps.upload.outcome }}
-          source_sha=${{ github.sha }}
+          source_sha=$(git rev-parse HEAD)
           "@
           Set-Content -Path CHP_BUILD_STATUS.txt -Value $status
           git config user.name 'chp build bot'
