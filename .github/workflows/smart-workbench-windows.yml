@@ -1,0 +1,47 @@
+name: Build Smart Workbench Windows
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '24.11.1'
+
+jobs:
+  windows:
+    name: Build Windows Desktop
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup desktop build environment
+        uses: ./.github/actions/desktop-build-setup
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Set development package version
+        run: npm run workflow:set-desktop-version 2.2.14 stable
+
+      - name: Build unsigned Windows package
+        run: npm run desktop:package:app
+        env:
+          APP_URL: http://localhost:3015
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          DATABASE_URL: postgresql://postgres@localhost:5432/postgres
+          KEY_VAULTS_SECRET: oLXWIiR/AKF+rWaqy9lHkrYgzpATbW3CtJp3UfkVgpE=
+          RELEASE_NOTES: Smart Workbench development build
+          TEMP: C:\temp
+          TMP: C:\temp
+          UPDATE_CHANNEL: stable
+
+      - name: Upload Windows artifacts
+        uses: ./.github/actions/desktop-upload-artifacts
+        with:
+          artifact-name: smart-workbench-windows
+          retention-days: '5'
