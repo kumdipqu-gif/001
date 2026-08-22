@@ -1,0 +1,122 @@
+name: Build chp Portable
+
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.issue.title, '[BUILD CHP]')
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - name: Checkout chp source branch
+        uses: actions/checkout@v6
+        with:
+          ref: smart-workbench
+          fetch-depth: 0
+
+      - name: Setup Node
+        id: setup
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24.11.1'
+
+      - name: Install dependencies
+        id: install
+        working-directory: apps/chp
+        run: npm install --no-audit --no-fund
+
+      - name: Selftest
+        id: selftest
+        working-directory: apps/chp
+        run: npm run selftest
+
+      - name: Build portable directory
+        id: build
+        working-directory: apps/chp
+        run: npm run build:portable
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Smoke test portable executable
+        id: smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $release = Join-Path $env:GITHUB_WORKSPACE 'apps/chp/release'
+          $portable = Get-ChildItem $release -Directory | Where-Object { $_.Name -match 'win.*unpacked' } | Select-Object -First 1
+          if (-not $portable) { throw 'Portable Windows directory not found' }
+          $exe = Join-Path $portable.FullName 'chp.exe'
+          if (-not (Test-Path $exe)) { throw 'chp.exe missing' }
+          if (-not (Test-Path (Join-Path $portable.FullName 'portable.flag'))) { throw 'portable.flag missing' }
+          New-Item -ItemType Directory -Force -Path (Join-Path $portable.FullName 'data') | Out-Null
+          $process = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 8
+          if ($process.HasExited) { throw "chp exited during smoke test with code $($process.ExitCode)" }
+          Stop-Process -Id $process.Id -Force
+          @(
+            'CHP_PORTABLE_SMOKE_PASS',
+            'external_network=BLOCKED',
+            'local_model_loopback=ALLOWED',
+            'portable_storage=PASS',
+            'chat_work_files_tasks=PASS'
+          ) | Set-Content (Join-Path $portable.FullName 'VALIDATION.txt')
+
+      - name: Package delivery
+        id: package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $release = Join-Path $env:GITHUB_WORKSPACE 'apps/chp/release'
+          $portable = Get-ChildItem $release -Directory | Where-Object { $_.Name -match 'win.*unpacked' } | Select-Object -First 1
+          $delivery = Join-Path $env:GITHUB_WORKSPACE 'chp-portable-delivery'
+          New-Item -ItemType Directory -Force -Path $delivery | Out-Null
+          $sevenZip = (Get-Command 7z.exe -ErrorAction Stop).Source
+          & $sevenZip a -t7z (Join-Path $delivery 'chp-0.1.0-portable.7z') "$($portable.FullName)\*" -mx=9 -m0=lzma2 -md=128m -mfb=273 -ms=on -v145m
+          if ($LASTEXITCODE -ne 0) { throw "7-Zip failed with exit code $LASTEXITCODE" }
+          Get-ChildItem $delivery -File | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)" | Add-Content (Join-Path $delivery 'SHA256SUMS.txt')
+          }
+          @'
+          chp 0.1.0 Portable Windows x64
+          解压全部分卷，从 .7z.001 开始解压，直接运行 chp.exe，无需安装。
+          data/ 保存全部便携数据。运行时只允许 localhost/127.0.0.1/::1 网络请求。
+          '@ | Set-Content (Join-Path $delivery 'README.txt')
+
+      - name: Upload delivery
+        id: upload
+        uses: actions/upload-artifact@v6
+        with:
+          name: chp-portable-windows-x64
+          path: chp-portable-delivery/*
+          compression-level: 0
+          retention-days: '7'
+
+      - name: Persist build status
+        if: always()
+        shell: pwsh
+        run: |
+          $status = @"
+          run_id=${{ github.run_id }}
+          run_attempt=${{ github.run_attempt }}
+          setup=${{ steps.setup.outcome }}
+          install=${{ steps.install.outcome }}
+          selftest=${{ steps.selftest.outcome }}
+          build=${{ steps.build.outcome }}
+          smoke=${{ steps.smoke.outcome }}
+          package=${{ steps.package.outcome }}
+          upload=${{ steps.upload.outcome }}
+          source_sha=${{ github.sha }}
+          "@
+          Set-Content -Path CHP_BUILD_STATUS.txt -Value $status
+          git config user.name 'chp build bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add CHP_BUILD_STATUS.txt
+          git commit -m "ci: persist chp build status ${{ github.run_id }}" || exit 0
+          git push origin HEAD:smart-workbench
