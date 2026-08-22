@@ -74,6 +74,10 @@ export const workbenchRoutes: RouteObject[] = [
   {
     children: [
       {
+        element: lazyElement(() => import('@/routes/(workbench)/smart-workbench')),
+        path: 'smart-workbench',
+      },
+      {
         element: lazyElement(() => import('@/routes/(workbench)/agent/docs/[docId]')),
         path: 'agent/:aid/docs/:docId',
       },
