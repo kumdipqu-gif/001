@@ -35,13 +35,41 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           DATABASE_URL: postgresql://postgres@localhost:5432/postgres
           KEY_VAULTS_SECRET: oLXWIiR/AKF+rWaqy9lHkrYgzpATbW3CtJp3UfkVgpE=
-          RELEASE_NOTES: Smart Workbench development build
+          RELEASE_NOTES: Smart Workbench complete development build
           TEMP: C:\temp
           TMP: C:\temp
           UPDATE_CHANNEL: stable
 
-      - name: Upload Windows artifacts
-        uses: ./.github/actions/desktop-upload-artifacts
+      - name: Create maximum-compression delivery volumes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $release = Join-Path $env:GITHUB_WORKSPACE 'apps/desktop/release'
+          $delivery = Join-Path $env:GITHUB_WORKSPACE 'smart-workbench-delivery'
+          New-Item -ItemType Directory -Force -Path $delivery | Out-Null
+          $sevenZip = (Get-Command 7z.exe -ErrorAction Stop).Source
+          $payload = Get-ChildItem $release -File | Where-Object { $_.Extension -in '.exe','.yml','.blockmap' } | Select-Object -ExpandProperty FullName
+          if (-not $payload) { throw 'No Windows release payload found' }
+          & $sevenZip a -t7z (Join-Path $delivery 'SmartWorkbench-2.2.14.7z') $payload -mx=9 -m0=lzma2 -md=128m -mfb=273 -ms=on -v145m
+          if ($LASTEXITCODE -ne 0) { throw "7-Zip failed with exit code $LASTEXITCODE" }
+          Get-ChildItem $delivery -File | ForEach-Object {
+            if ($_.Length -gt 150MB) { throw "Delivery part exceeds 150 MB: $($_.Name)" }
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)" | Add-Content (Join-Path $delivery 'SHA256SUMS.txt')
+          }
+          @'
+          Smart Workbench 2.2.14 Windows
+          1. Download every .7z.* volume into the same folder.
+          2. Open/extract the first .7z.001 volume with 7-Zip.
+          3. Run LobeHub-2.2.14-setup.exe.
+          4. Smart Workbench route: /smart-workbench
+          All compressed volumes are capped below 150 MB.
+          '@ | Set-Content (Join-Path $delivery 'README.txt')
+
+      - name: Upload compressed delivery
+        uses: actions/upload-artifact@v6
         with:
-          artifact-name: smart-workbench-windows
+          name: smart-workbench-complete-windows
+          path: smart-workbench-delivery/*
+          compression-level: 0
           retention-days: '5'
