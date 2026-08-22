@@ -9,6 +9,7 @@ const state = {
   config: null,
   editorPath: '',
   currentRequestId: null,
+  pendingDocuments: [],
 };
 
 const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
@@ -59,14 +60,36 @@ function renderChat() {
   $('#messages').scrollTop = $('#messages').scrollHeight;
 }
 
+function buildDocumentContext(documents) {
+  if (!documents.length) return '';
+  return documents.map((doc) => `\n\n--- 本地附件开始: ${doc.name} (${doc.kind}) ---\n${doc.content}\n--- 本地附件结束: ${doc.name} ---`).join('');
+}
+
+async function pickDocuments() {
+  try {
+    const docs = await window.chp.files.pick();
+    if (!docs?.length) return;
+    state.pendingDocuments = docs;
+    $('#insertFile').textContent = `＋ 文件 (${docs.length})`;
+    $('#prompt').focus();
+  } catch (e) {
+    $('#insertFile').textContent = '文件读取失败';
+    setTimeout(() => { $('#insertFile').textContent = '＋ 文件'; }, 1800);
+  }
+}
+
 async function sendPrompt(text) {
   const prompt = text.trim();
   if (!prompt || state.currentRequestId) return;
   const chat = ensureChat();
   if (chat.messages.length === 0) chat.title = prompt.slice(0, 28) + (prompt.length > 28 ? '…' : '');
-  chat.messages.push({ role: 'user', content: prompt });
+  const attachments = state.pendingDocuments;
+  const attachmentLabel = attachments.length ? `\n\n[已附加 ${attachments.map((d) => d.name).join('、')}]` : '';
+  chat.messages.push({ role: 'user', content: prompt + attachmentLabel, modelContent: prompt + buildDocumentContext(attachments) });
   chat.messages.push({ role: 'assistant', content: '' });
   chat.updatedAt = Date.now();
+  state.pendingDocuments = [];
+  $('#insertFile').textContent = '＋ 文件';
   state.currentRequestId = uid();
   $('#send').textContent = '■';
   $('#prompt').value = '';
@@ -74,7 +97,7 @@ async function sendPrompt(text) {
   renderChat();
   renderChatList();
   await saveChats();
-  const payloadMessages = chat.messages.slice(0, -1).map((m) => ({ role: m.role, content: m.content }));
+  const payloadMessages = chat.messages.slice(0, -1).map((m) => ({ role: m.role, content: m.modelContent || m.content }));
   window.chp.chat.start({ requestId: state.currentRequestId, messages: payloadMessages });
 }
 
@@ -121,7 +144,7 @@ async function refreshFiles() {
       try {
         const result = await window.chp.files.read(rel);
         state.editorPath = result.path;
-        $('#editorPath').textContent = result.path;
+        $('#editorPath').textContent = `${result.path} · ${result.kind || 'text'}`;
         $('#editor').value = result.content;
       } catch (e) { $('#editorPath').textContent = e.message; }
     });
@@ -139,7 +162,7 @@ async function searchFiles() {
       const rel = decodeURIComponent(el.dataset.file);
       const result = await window.chp.files.read(rel);
       state.editorPath = result.path;
-      $('#editorPath').textContent = result.path;
+      $('#editorPath').textContent = `${result.path} · ${result.kind || 'text'}`;
       $('#editor').value = result.content;
     });
   } catch (e) { $('#searchResults').innerHTML = `<div class="search-row">${escapeHtml(e.message)}</div>`; }
@@ -241,7 +264,7 @@ async function init() {
   $('#addTask').onclick = addTask;
   $('#saveSettings').onclick = saveSettings;
   $('#attachWorkspace').onclick = () => { if (!state.workspace.root) return chooseWorkspace(); $('#prompt').value += `\n\n请结合当前项目 ${state.workspace.root} 进行分析。`; autoSizePrompt(); };
-  $('#insertFile').onclick = () => switchView('files');
+  $('#insertFile').onclick = pickDocuments;
 
   window.chp.chat.onDelta(({ requestId, delta }) => {
     if (requestId !== state.currentRequestId) return;
