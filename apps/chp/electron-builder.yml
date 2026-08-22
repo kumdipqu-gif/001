@@ -1,0 +1,18 @@
+appId: com.chp.desktop
+productName: chp
+asar: true
+directories:
+  output: release
+  buildResources: build
+files:
+  - src/**/*
+  - package.json
+extraResources:
+  - from: portable.flag
+    to: ../portable.flag
+win:
+  executableName: chp
+  icon: build/chp.ico
+  target:
+    - target: dir
+artifactName: chp-${version}-${arch}.${ext}
