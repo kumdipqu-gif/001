@@ -1,8 +1,11 @@
-name: Build Smart Workbench Windows
+name: Build chp Portable Windows
 
 on:
-  pull_request:
-    branches: [main]
+  push:
+    branches: [smart-workbench]
+    paths:
+      - 'apps/chp/**'
+      - '.github/workflows/smart-workbench-windows.yml'
   workflow_dispatch:
 
 permissions:
@@ -13,44 +16,74 @@ env:
 
 jobs:
   windows:
-    name: Build Windows Desktop
+    name: Validate and build chp portable
     runs-on: windows-2025
-    timeout-minutes: 60
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/chp
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup desktop build environment
-        uses: ./.github/actions/desktop-build-setup
+      - name: Setup Node
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/chp/package-lock.json
 
-      - name: Set development package version
-        run: npm run workflow:set-desktop-version 2.2.14 stable
+      - name: Install chp dependencies
+        run: npm install --no-audit --no-fund
 
-      - name: Build unsigned Windows package
-        run: npm run desktop:package:app
+      - name: Run offline and feature selftest
+        run: npm run selftest
+
+      - name: Generate branded Windows icon
+        run: npm run icon
+
+      - name: Build unpacked portable app
+        run: npm run build:portable
         env:
-          APP_URL: http://localhost:3015
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-          DATABASE_URL: postgresql://postgres@localhost:5432/postgres
-          KEY_VAULTS_SECRET: oLXWIiR/AKF+rWaqy9lHkrYgzpATbW3CtJp3UfkVgpE=
-          RELEASE_NOTES: Smart Workbench complete development build
-          TEMP: C:\temp
-          TMP: C:\temp
-          UPDATE_CHANNEL: stable
 
-      - name: Create maximum-compression delivery volumes
+      - name: Verify portable payload and launch
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $release = Join-Path $env:GITHUB_WORKSPACE 'apps/desktop/release'
-          $delivery = Join-Path $env:GITHUB_WORKSPACE 'smart-workbench-delivery'
+          $release = Join-Path $env:GITHUB_WORKSPACE 'apps/chp/release'
+          $portable = Get-ChildItem $release -Directory | Where-Object { $_.Name -match 'win.*unpacked' } | Select-Object -First 1
+          if (-not $portable) { throw 'Portable Windows directory not found' }
+          $exe = Join-Path $portable.FullName 'chp.exe'
+          if (-not (Test-Path $exe)) { throw 'chp.exe missing' }
+          if (-not (Test-Path (Join-Path $portable.FullName 'portable.flag'))) { throw 'portable.flag missing' }
+          New-Item -ItemType Directory -Force -Path (Join-Path $portable.FullName 'data') | Out-Null
+
+          $process = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 8
+          if ($process.HasExited) { throw "chp exited during smoke test with code $($process.ExitCode)" }
+          Stop-Process -Id $process.Id -Force
+
+          $source = Get-Content (Join-Path $env:GITHUB_WORKSPACE 'apps/chp/src/main.cjs') -Raw
+          if ($source -match 'https://(api\.|ark\.|claude\.|openai\.|anthropic\.)') { throw 'Public AI endpoint found in runtime source' }
+          if ($source -notmatch 'blocked external network request') { throw 'External network guard not found' }
+          if ($source -notmatch "127\.0\.0\.1.*localhost.*::1") { throw 'Loopback allowlist not found' }
+
+          'CHP_PORTABLE_SMOKE_PASS' | Set-Content (Join-Path $portable.FullName 'VALIDATION.txt')
+          'external_network=BLOCKED' | Add-Content (Join-Path $portable.FullName 'VALIDATION.txt')
+          'local_model_loopback=ALLOWED' | Add-Content (Join-Path $portable.FullName 'VALIDATION.txt')
+          'portable_storage=PASS' | Add-Content (Join-Path $portable.FullName 'VALIDATION.txt')
+
+      - name: Create split portable delivery
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $release = Join-Path $env:GITHUB_WORKSPACE 'apps/chp/release'
+          $portable = Get-ChildItem $release -Directory | Where-Object { $_.Name -match 'win.*unpacked' } | Select-Object -First 1
+          $delivery = Join-Path $env:GITHUB_WORKSPACE 'chp-portable-delivery'
           New-Item -ItemType Directory -Force -Path $delivery | Out-Null
           $sevenZip = (Get-Command 7z.exe -ErrorAction Stop).Source
-          $payload = Get-ChildItem $release -File | Where-Object { $_.Extension -in '.exe','.yml','.blockmap' } | Select-Object -ExpandProperty FullName
-          if (-not $payload) { throw 'No Windows release payload found' }
-          & $sevenZip a -t7z (Join-Path $delivery 'SmartWorkbench-2.2.14.7z') $payload -mx=9 -m0=lzma2 -md=128m -mfb=273 -ms=on -v145m
+          & $sevenZip a -t7z (Join-Path $delivery 'chp-0.1.0-portable.7z') "$($portable.FullName)\*" -mx=9 -m0=lzma2 -md=128m -mfb=273 -ms=on -v145m
           if ($LASTEXITCODE -ne 0) { throw "7-Zip failed with exit code $LASTEXITCODE" }
           Get-ChildItem $delivery -File | ForEach-Object {
             if ($_.Length -gt 150MB) { throw "Delivery part exceeds 150 MB: $($_.Name)" }
@@ -58,18 +91,23 @@ jobs:
             "$hash  $($_.Name)" | Add-Content (Join-Path $delivery 'SHA256SUMS.txt')
           }
           @'
-          Smart Workbench 2.2.14 Windows
-          1. Download every .7z.* volume into the same folder.
-          2. Open/extract the first .7z.001 volume with 7-Zip.
-          3. Run LobeHub-2.2.14-setup.exe.
-          4. Smart Workbench route: /smart-workbench
-          All compressed volumes are capped below 150 MB.
+          chp 0.1.0 Portable Windows x64
+
+          使用：
+          1. 下载全部 chp-0.1.0-portable.7z.* 分卷到同一目录。
+          2. 用 7-Zip 从 .7z.001 开始解压。
+          3. 直接双击 chp.exe，不需要安装。
+          4. data/ 是全部便携数据目录，复制整个文件夹即可迁移。
+          5. chp 在运行时阻断公网 HTTP/HTTPS/WebSocket，只允许 localhost / 127.0.0.1 / ::1。
+          6. 本地模型可使用 Ollama、LM Studio、llama.cpp 等 OpenAI-Compatible 本机服务。
+
+          VALIDATION.txt 记录 CI 启动与离线检查结果。
           '@ | Set-Content (Join-Path $delivery 'README.txt')
 
-      - name: Upload compressed delivery
+      - name: Upload chp portable delivery
         uses: actions/upload-artifact@v6
         with:
-          name: smart-workbench-complete-windows
-          path: smart-workbench-delivery/*
+          name: chp-portable-windows-x64
+          path: chp-portable-delivery/*
           compression-level: 0
-          retention-days: '5'
+          retention-days: '7'
