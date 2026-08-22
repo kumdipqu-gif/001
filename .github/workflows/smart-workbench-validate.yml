@@ -1,8 +1,6 @@
 name: Validate Smart Workbench
 
 on:
-  push:
-    branches: [smart-workbench]
   pull_request:
     branches: [main]
   workflow_dispatch:
