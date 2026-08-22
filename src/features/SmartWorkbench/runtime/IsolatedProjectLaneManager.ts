@@ -65,7 +65,9 @@ export class IsolatedProjectLaneManager {
   subscribe = (listener: Listener) => {
     this.listeners.add(listener);
     listener(this.snapshot());
-    return () => this.listeners.delete(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
   };
 
   snapshot = (): ProjectLaneSnapshot[] => [...this.lanes.values()].map(cloneLane);
