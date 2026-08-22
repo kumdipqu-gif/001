@@ -1,10 +1,18 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+const listen = (channel, callback) => {
+  const listener = (_event, value) => callback(value);
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.removeListener(channel, listener);
+};
+
 contextBridge.exposeInMainWorld('chp', {
   appInfo: () => ipcRenderer.invoke('app:info'),
   config: {
     get: () => ipcRenderer.invoke('config:get'),
     set: (value) => ipcRenderer.invoke('config:set', value),
+    test: (value) => ipcRenderer.invoke('config:test', value),
+    importFile: () => ipcRenderer.invoke('config:import'),
   },
   workspace: {
     choose: () => ipcRenderer.invoke('workspace:choose'),
@@ -17,27 +25,20 @@ contextBridge.exposeInMainWorld('chp', {
     write: (payload) => ipcRenderer.invoke('files:write', payload),
     search: (query) => ipcRenderer.invoke('files:search', query),
   },
-  terminal: {
-    run: (command) => ipcRenderer.invoke('terminal:run', command),
+  terminal: { run: (command) => ipcRenderer.invoke('terminal:run', command) },
+  artifacts: {
+    list: () => ipcRenderer.invoke('artifacts:list'),
+    read: (name) => ipcRenderer.invoke('artifacts:read', name),
+    create: (payload) => ipcRenderer.invoke('artifacts:create', payload),
   },
   chat: {
     start: (payload) => ipcRenderer.send('chat:start', payload),
     cancel: (requestId) => ipcRenderer.invoke('chat:cancel', requestId),
-    onDelta: (callback) => {
-      const listener = (_event, value) => callback(value);
-      ipcRenderer.on('chat:delta', listener);
-      return () => ipcRenderer.removeListener('chat:delta', listener);
-    },
-    onDone: (callback) => {
-      const listener = (_event, value) => callback(value);
-      ipcRenderer.on('chat:done', listener);
-      return () => ipcRenderer.removeListener('chat:done', listener);
-    },
-    onError: (callback) => {
-      const listener = (_event, value) => callback(value);
-      ipcRenderer.on('chat:error', listener);
-      return () => ipcRenderer.removeListener('chat:error', listener);
-    },
+    onDelta: (callback) => listen('chat:delta', callback),
+    onDone: (callback) => listen('chat:done', callback),
+    onError: (callback) => listen('chat:error', callback),
+    onTool: (callback) => listen('chat:tool', callback),
+    onUsage: (callback) => listen('chat:usage', callback),
     getAll: () => ipcRenderer.invoke('chats:get'),
     saveAll: (chats) => ipcRenderer.invoke('chats:set', chats),
   },
