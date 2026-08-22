@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { parseLocalDocument } = require('./documents.cjs');
 
 const APP_NAME = 'chp';
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1']);
@@ -185,9 +186,28 @@ ipcMain.handle('files:read', async (_e, rel) => {
   const { root } = await readJson(workspaceState, { root: '' });
   if (!root) throw new Error('No workspace selected.');
   const file = safeJoin(root, rel);
-  const stat = await fsp.stat(file);
-  if (stat.size > 4 * 1024 * 1024) throw new Error('File too large for editor preview.');
-  return { path: rel, content: await fsp.readFile(file, 'utf8') };
+  const parsed = await parseLocalDocument(file);
+  return { path: rel, kind: parsed.kind, content: parsed.content };
+});
+ipcMain.handle('files:pick', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      { name: 'Documents', extensions: ['txt','md','pdf','docx','xlsx','xls','csv','tsv','pptx','json','js','ts','tsx','py','html','css','xml','yaml','yml'] },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+  });
+  if (result.canceled) return [];
+  const documents = [];
+  for (const file of result.filePaths.slice(0, 8)) {
+    try {
+      const parsed = await parseLocalDocument(file);
+      documents.push({ name: path.basename(file), path: file, kind: parsed.kind, content: parsed.content.slice(0, 300000) });
+    } catch (error) {
+      documents.push({ name: path.basename(file), path: file, kind: 'error', content: error?.message || String(error) });
+    }
+  }
+  return documents;
 });
 ipcMain.handle('files:write', async (_e, { rel, content }) => {
   const { root } = await readJson(workspaceState, { root: '' });
