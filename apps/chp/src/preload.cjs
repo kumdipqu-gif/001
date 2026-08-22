@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('chp', {
   files: {
     list: (rel) => ipcRenderer.invoke('files:list', rel),
     read: (rel) => ipcRenderer.invoke('files:read', rel),
+    pick: () => ipcRenderer.invoke('files:pick'),
     write: (payload) => ipcRenderer.invoke('files:write', payload),
     search: (query) => ipcRenderer.invoke('files:search', query),
   },
