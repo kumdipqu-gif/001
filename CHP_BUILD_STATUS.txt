@@ -1,0 +1,10 @@
+run_id=32581218995
+run_attempt=1
+setup=success
+install=success
+selftest=success
+build=failure
+smoke=skipped
+package=skipped
+upload=skipped
+source_sha=90f6f1f193e2171549f547c7accbcb457d1e18ee
