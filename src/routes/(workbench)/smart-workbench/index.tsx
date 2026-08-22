@@ -1,20 +1,20 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { type CSSProperties, useEffect, useMemo, useState } from 'react';
 
 import {
   type ProjectLaneSnapshot,
   smartWorkbenchLaneManager,
 } from '@/features/SmartWorkbench/runtime/IsolatedProjectLaneManager';
 
-const panel: React.CSSProperties = {
+const panel: CSSProperties = {
   background: 'rgba(127,127,127,.08)',
   border: '1px solid rgba(127,127,127,.18)',
   borderRadius: 14,
   padding: 16,
 };
 
-const inputStyle: React.CSSProperties = {
+const inputStyle: CSSProperties = {
   background: 'transparent',
   border: '1px solid rgba(127,127,127,.28)',
   borderRadius: 8,
@@ -24,7 +24,7 @@ const inputStyle: React.CSSProperties = {
   width: '100%',
 };
 
-const buttonStyle: React.CSSProperties = {
+const buttonStyle: CSSProperties = {
   background: 'transparent',
   border: '1px solid rgba(127,127,127,.35)',
   borderRadius: 8,
