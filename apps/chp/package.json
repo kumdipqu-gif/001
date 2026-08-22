@@ -1,0 +1,23 @@
+{
+  "name": "chp-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "chp - fully local AI chat and work desktop application",
+  "main": "src/main.cjs",
+  "scripts": {
+    "icon": "node scripts/generate-icon.cjs",
+    "start": "npm run icon && electron .",
+    "build:portable": "npm run icon && electron-builder --win --x64 --dir --publish never",
+    "selftest": "node scripts/selftest.cjs"
+  },
+  "dependencies": {
+    "adm-zip": "0.5.16",
+    "mammoth": "1.10.0",
+    "pdf-parse": "1.1.1",
+    "xlsx": "0.18.5"
+  },
+  "devDependencies": {
+    "electron": "43.2.0",
+    "electron-builder": "26.14.0"
+  }
+}
