@@ -1,0 +1,109 @@
+name: Build chp Portable
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  build:
+    if: startsWith(github.event.issue.title, '[CHP BUILD]')
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout smart-workbench
+        uses: actions/checkout@v4
+        with:
+          ref: smart-workbench
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/chp/package.json
+
+      - name: Install chp dependencies
+        shell: pwsh
+        run: |
+          Set-Location apps/chp
+          npm install --no-audit --no-fund
+
+      - name: Static selftest
+        shell: pwsh
+        run: |
+          Set-Location apps/chp
+          npm run selftest
+
+      - name: Build portable Windows directory
+        shell: pwsh
+        run: |
+          Set-Location apps/chp
+          npm run build:portable
+
+      - name: Verify portable layout
+        shell: pwsh
+        run: |
+          $root = Resolve-Path apps/chp/release/win-unpacked
+          $required = @('chp.exe','portable.flag','chp-api.json','resources')
+          foreach ($name in $required) {
+            if (-not (Test-Path (Join-Path $root $name))) { throw "Missing $name" }
+          }
+          if (-not (Test-Path (Join-Path $root 'data'))) { New-Item -ItemType Directory -Path (Join-Path $root 'data') | Out-Null }
+          if (Get-ChildItem apps/chp/release -Recurse -Filter '*Setup*.exe' -ErrorAction SilentlyContinue) { throw 'Installer artifact found; expected unpacked portable only.' }
+          "portable_layout=PASS" | Tee-Object -FilePath apps/chp/release/verification.txt
+
+      - name: Launch smoke test
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path apps/chp/release/win-unpacked/chp.exe
+          $p = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 10
+          if ($p.HasExited) { throw "chp exited during startup smoke test with code $($p.ExitCode)" }
+          Stop-Process -Id $p.Id -Force
+          "startup_smoke=PASS" | Add-Content apps/chp/release/verification.txt
+
+      - name: Write build manifest
+        shell: pwsh
+        run: |
+          $dir = Resolve-Path apps/chp/release/win-unpacked
+          $exe = Join-Path $dir 'chp.exe'
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash
+          $size = (Get-Item $exe).Length
+          $head = (git rev-parse HEAD).Trim()
+          @(
+            "product=chp",
+            "format=portable-win-unpacked",
+            "commit=$head",
+            "exe_sha256=$hash",
+            "exe_bytes=$size",
+            "portable_data=beside_executable/data",
+            "model_gateway=anthropic+openai-compatible",
+            "lobehub_cloud_runtime=not_used"
+          ) | Set-Content apps/chp/release/BUILD-MANIFEST.txt
+          Get-Content apps/chp/release/verification.txt | Add-Content apps/chp/release/BUILD-MANIFEST.txt
+
+      - name: Create maximum compression split volumes
+        shell: pwsh
+        run: |
+          Set-Location apps/chp/release
+          if (Test-Path chp-portable.7z.001) { Remove-Item chp-portable.7z.* -Force }
+          & 7z a -t7z -mx=9 -m0=lzma2 -md=128m -mmt=on -v145m chp-portable.7z .\win-unpacked\* .\BUILD-MANIFEST.txt .\verification.txt
+          if ($LASTEXITCODE -ne 0) { throw '7z failed' }
+          $parts = Get-ChildItem chp-portable.7z.* | Sort-Object Name
+          if (-not $parts) { throw 'No split archive parts created' }
+          foreach ($part in $parts) {
+            if ($part.Length -gt 150MB) { throw "$($part.Name) exceeds 150MB" }
+          }
+          $parts | ForEach-Object { "{0}  {1}  {2}" -f $_.Name,$_.Length,(Get-FileHash $_.FullName -Algorithm SHA256).Hash } | Set-Content SHA256SUMS.txt
+
+      - name: Upload chp portable delivery
+        uses: actions/upload-artifact@v4
+        with:
+          name: chp-portable-windows-x64
+          path: |
+            apps/chp/release/chp-portable.7z.*
+            apps/chp/release/SHA256SUMS.txt
+            apps/chp/release/BUILD-MANIFEST.txt
+            apps/chp/release/verification.txt
+          if-no-files-found: error
+          retention-days: 14
