@@ -4,6 +4,10 @@ on:
   issues:
     types: [opened]
 
+permissions:
+  contents: write
+  issues: write
+
 jobs:
   build:
     if: startsWith(github.event.issue.title, '[CHP BUILD]')
@@ -19,8 +23,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: apps/chp/package.json
 
       - name: Install chp dependencies
         shell: pwsh
@@ -87,7 +89,7 @@ jobs:
         run: |
           Set-Location apps/chp/release
           if (Test-Path chp-portable.7z.001) { Remove-Item chp-portable.7z.* -Force }
-          & 7z a -t7z -mx=9 -m0=lzma2 -md=128m -mmt=on -v145m chp-portable.7z .\win-unpacked\* .\BUILD-MANIFEST.txt .\verification.txt
+          & 7z a -t7z -mx=9 -m0=lzma2 -md=128m -mmt=on -v95m chp-portable.7z .\win-unpacked\* .\BUILD-MANIFEST.txt .\verification.txt
           if ($LASTEXITCODE -ne 0) { throw '7z failed' }
           $parts = Get-ChildItem chp-portable.7z.* | Sort-Object Name
           if (-not $parts) { throw 'No split archive parts created' }
@@ -96,7 +98,7 @@ jobs:
           }
           $parts | ForEach-Object { "{0}  {1}  {2}" -f $_.Name,$_.Length,(Get-FileHash $_.FullName -Algorithm SHA256).Hash } | Set-Content SHA256SUMS.txt
 
-      - name: Upload chp portable delivery
+      - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: chp-portable-windows-x64
@@ -107,3 +109,31 @@ jobs:
             apps/chp/release/verification.txt
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish GitHub release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = 'chp-portable-latest'
+          gh release delete $tag --repo $env:GITHUB_REPOSITORY --yes --cleanup-tag 2>$null
+          gh release create $tag --repo $env:GITHUB_REPOSITORY --title 'chp Portable Windows x64' --notes 'Verified portable build. Extract all 7z volumes together, then run chp.exe. Data is stored beside the executable; model APIs may be online or local.'
+          gh release upload $tag apps/chp/release/chp-portable.7z.* apps/chp/release/SHA256SUMS.txt apps/chp/release/BUILD-MANIFEST.txt apps/chp/release/verification.txt --repo $env:GITHUB_REPOSITORY --clobber
+
+      - name: Report success on issue
+        if: success()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $url = "https://github.com/$env:GITHUB_REPOSITORY/releases/tag/chp-portable-latest"
+          gh issue comment ${{ github.event.issue.number }} --repo $env:GITHUB_REPOSITORY --body "CHP_BUILD_PASS`nRelease: $url`nStatic selftest: PASS`nPortable layout: PASS`nStartup smoke: PASS`nSplit volumes: <=95 MiB each"
+          gh issue close ${{ github.event.issue.number }} --repo $env:GITHUB_REPOSITORY --reason completed
+
+      - name: Report failure on issue
+        if: failure()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment ${{ github.event.issue.number }} --repo $env:GITHUB_REPOSITORY --body "CHP_BUILD_FAIL`nRun: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
