@@ -3,6 +3,8 @@ name: Build chp Portable
 on:
   issues:
     types: [opened]
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
@@ -10,7 +12,7 @@ permissions:
 
 jobs:
   build:
-    if: startsWith(github.event.issue.title, '[CHP BUILD]')
+    if: (github.event_name == 'issues' && startsWith(github.event.issue.title, '[CHP BUILD]')) || (github.event_name == 'pull_request' && github.head_ref == 'smart-workbench')
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -111,6 +113,7 @@ jobs:
           retention-days: 14
 
       - name: Publish GitHub release assets
+        if: github.event_name == 'issues'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -121,7 +124,7 @@ jobs:
           gh release upload $tag apps/chp/release/chp-portable.7z.* apps/chp/release/SHA256SUMS.txt apps/chp/release/BUILD-MANIFEST.txt apps/chp/release/verification.txt --repo $env:GITHUB_REPOSITORY --clobber
 
       - name: Report success on issue
-        if: success()
+        if: success() && github.event_name == 'issues'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -131,7 +134,7 @@ jobs:
           gh issue close ${{ github.event.issue.number }} --repo $env:GITHUB_REPOSITORY --reason completed
 
       - name: Report failure on issue
-        if: failure()
+        if: failure() && github.event_name == 'issues'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
