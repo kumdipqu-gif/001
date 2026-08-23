@@ -1,0 +1,10 @@
+run_id=32581805152
+run_attempt=1
+setup=success
+install=success
+selftest=success
+build=success
+smoke=success
+package=success
+upload=success
+source_sha=90a975f4b8b52fcd9269586f324283b910932222

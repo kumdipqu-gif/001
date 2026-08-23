@@ -1,0 +1,30 @@
+{
+  "name": "chp-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "chp Complete - portable AI chat, local work agent, MCP, PTY, project indexing, computer use, skills and artifact studio",
+  "main": "src/main.cjs",
+  "scripts": {
+    "icon": "node scripts/generate-icon.cjs",
+    "start": "npm run icon && electron .",
+    "build:portable": "npm run icon && electron-builder --win --x64 --dir --publish never",
+    "selftest": "node scripts/selftest.cjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@vscode/ripgrep": "1.18.0",
+    "adm-zip": "0.5.16",
+    "docx": "9.7.1",
+    "exceljs": "4.4.0",
+    "mammoth": "1.10.0",
+    "node-pty": "1.1.0",
+    "pdf-parse": "1.1.1",
+    "pdfkit": "0.19.1",
+    "pptxgenjs": "4.0.1",
+    "xlsx": "0.18.5"
+  },
+  "devDependencies": {
+    "electron": "43.2.0",
+    "electron-builder": "26.14.0"
+  }
+}

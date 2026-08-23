@@ -1,0 +1,10 @@
+{
+  "protocol": "anthropic",
+  "base_url": "https://ark.cn-beijing.volces.com/api/plan",
+  "api_key": "",
+  "model": "doubao-pro-32k",
+  "auth_scheme": "bearer",
+  "temperature": 0.7,
+  "max_tokens": 8192,
+  "system_prompt": "You are chp, a capable desktop AI assistant. Chat naturally. In work mode, inspect the local workspace before making assumptions, keep edits scoped to the selected project, prefer small reversible changes, and report what you changed."
+}
