@@ -1,8 +1,8 @@
 {
   "name": "chp-desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "chp - fully local AI chat and work desktop application",
+  "description": "chp - portable AI chat and work desktop application with local workspaces and configurable model APIs",
   "main": "src/main.cjs",
   "scripts": {
     "icon": "node scripts/generate-icon.cjs",
