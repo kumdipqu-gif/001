@@ -10,7 +10,7 @@ Portable Windows AI desktop application with local workspaces, configurable onli
 - Work Agent tools include project tree/read/write, ripgrep search and persistent project indexing, command execution, Skills, Artifact generation, MCP tools, and opt-in Computer Use.
 - Every Work Agent request captures its project root at launch. Switching projects while another request is running cannot redirect that request's file or command tools.
 - Interactive PTY uses `node-pty`; project search/index uses packaged ripgrep.
-- MCP Runtime supports arbitrary local stdio MCP servers and packages the official open-source GitHub MCP Server in the Windows delivery.
+- MCP Runtime supports arbitrary local stdio MCP servers, including Microsoft 365 MCP servers, and packages the official open-source GitHub MCP Server in the Windows delivery.
 - Local Skills are stored under portable data and can guide code review, debugging, document, spreadsheet, presentation, and frontend-design workflows.
 - Artifact Studio creates Markdown/text/JSON/HTML/CSV plus DOCX, XLSX, PPTX, and PDF files locally.
 - Computer Use is explicitly opt-in and provides primary-screen capture plus Windows click/type/key/open-URL actions.
