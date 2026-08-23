@@ -26,6 +26,10 @@ jobs:
         with:
           node-version: 22
 
+      - name: Setup pnpm
+        shell: pwsh
+        run: npm install --global pnpm@10.33.0
+
       - name: Install chp dependencies
         shell: pwsh
         run: |
