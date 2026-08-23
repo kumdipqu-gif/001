@@ -13,7 +13,7 @@ permissions:
 jobs:
   build:
     if: (github.event_name == 'issues' && startsWith(github.event.issue.title, '[CHP BUILD]')) || (github.event_name == 'pull_request' && github.head_ref == 'smart-workbench')
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 60
     steps:
       - name: Checkout smart-workbench
@@ -72,18 +72,8 @@ jobs:
         shell: pwsh
         run: |
           $root = Resolve-Path apps/chp/release/win-unpacked
-          $required = @(
-            'chp.exe',
-            'portable.flag',
-            'chp-api.json',
-            'resources',
-            'resources/app.asar',
-            'resources/app.asar.unpacked',
-            'resources/github-mcp-server.exe'
-          )
-          foreach ($name in $required) {
-            if (-not (Test-Path (Join-Path $root $name))) { throw "Missing $name" }
-          }
+          $required = @('chp.exe','portable.flag','chp-api.json','resources','resources/app.asar','resources/app.asar.unpacked','resources/github-mcp-server.exe')
+          foreach ($name in $required) { if (-not (Test-Path (Join-Path $root $name))) { throw "Missing $name" } }
           if (-not (Test-Path (Join-Path $root 'data'))) { New-Item -ItemType Directory -Path (Join-Path $root 'data') | Out-Null }
           $pty = Get-ChildItem (Join-Path $root 'resources/app.asar.unpacked') -Recurse -Filter '*.node' | Where-Object { $_.FullName -match 'node-pty|conpty' } | Select-Object -First 1
           if (-not $pty) { throw 'node-pty native runtime missing.' }
