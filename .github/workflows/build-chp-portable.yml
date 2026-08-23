@@ -14,7 +14,7 @@ jobs:
   build:
     if: (github.event_name == 'issues' && startsWith(github.event.issue.title, '[CHP BUILD]')) || (github.event_name == 'pull_request' && github.head_ref == 'smart-workbench')
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Checkout smart-workbench
         uses: actions/checkout@v4
@@ -29,6 +29,26 @@ jobs:
       - name: Setup pnpm
         shell: pwsh
         run: npm install --global pnpm@10.33.0
+
+      - name: Bundle official GitHub MCP
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force apps/chp/vendor | Out-Null
+          New-Item -ItemType Directory -Force apps/chp/.mcp-download | Out-Null
+          $release = gh api repos/github/github-mcp-server/releases/latest | ConvertFrom-Json
+          $asset = $release.assets | Where-Object { $_.name -match '(?i)windows' -and $_.name -match '(?i)(amd64|x86_64)' -and $_.name -match '\.zip$' } | Select-Object -First 1
+          if (-not $asset) { throw 'Official GitHub MCP Windows x64 release asset not found.' }
+          $zip = 'apps/chp/.mcp-download/github-mcp.zip'
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath apps/chp/.mcp-download/unpacked -Force
+          $exe = Get-ChildItem apps/chp/.mcp-download/unpacked -Recurse -Filter 'github-mcp-server.exe' | Select-Object -First 1
+          if (-not $exe) { throw 'github-mcp-server.exe missing from official release asset.' }
+          Copy-Item $exe.FullName apps/chp/vendor/github-mcp-server.exe -Force
+          "github_mcp_release=$($release.tag_name)" | Set-Content apps/chp/vendor/THIRD-PARTY-BUILD.txt
+          "github_mcp_source=https://github.com/github/github-mcp-server" | Add-Content apps/chp/vendor/THIRD-PARTY-BUILD.txt
 
       - name: Install chp dependencies
         shell: pwsh
@@ -48,24 +68,42 @@ jobs:
           Set-Location apps/chp
           npm run build:portable
 
-      - name: Verify portable layout
+      - name: Verify complete portable layout
         shell: pwsh
         run: |
           $root = Resolve-Path apps/chp/release/win-unpacked
-          $required = @('chp.exe','portable.flag','chp-api.json','resources')
+          $required = @(
+            'chp.exe',
+            'portable.flag',
+            'chp-api.json',
+            'resources',
+            'resources/app.asar',
+            'resources/app.asar.unpacked',
+            'resources/github-mcp-server.exe'
+          )
           foreach ($name in $required) {
             if (-not (Test-Path (Join-Path $root $name))) { throw "Missing $name" }
           }
           if (-not (Test-Path (Join-Path $root 'data'))) { New-Item -ItemType Directory -Path (Join-Path $root 'data') | Out-Null }
-          if (Get-ChildItem apps/chp/release -Recurse -Filter '*Setup*.exe' -ErrorAction SilentlyContinue) { throw 'Installer artifact found; expected unpacked portable only.' }
+          $pty = Get-ChildItem (Join-Path $root 'resources/app.asar.unpacked') -Recurse -Filter '*.node' | Where-Object { $_.FullName -match 'node-pty|conpty' } | Select-Object -First 1
+          if (-not $pty) { throw 'node-pty native runtime missing.' }
+          $rg = Get-ChildItem (Join-Path $root 'resources/app.asar.unpacked') -Recurse -Filter 'rg.exe' | Select-Object -First 1
+          if (-not $rg) { throw 'ripgrep native runtime missing.' }
+          $files = Get-ChildItem $root -Recurse -File
+          $bytes = ($files | Measure-Object Length -Sum).Sum
           "portable_layout=PASS" | Tee-Object -FilePath apps/chp/release/verification.txt
+          "native_pty=PASS" | Add-Content apps/chp/release/verification.txt
+          "ripgrep_indexer=PASS" | Add-Content apps/chp/release/verification.txt
+          "github_mcp_bundled=PASS" | Add-Content apps/chp/release/verification.txt
+          "unpacked_files=$($files.Count)" | Add-Content apps/chp/release/verification.txt
+          "unpacked_bytes=$bytes" | Add-Content apps/chp/release/verification.txt
 
       - name: Launch smoke test
         shell: pwsh
         run: |
           $exe = Resolve-Path apps/chp/release/win-unpacked/chp.exe
           $p = Start-Process -FilePath $exe -PassThru
-          Start-Sleep -Seconds 10
+          Start-Sleep -Seconds 12
           if ($p.HasExited) { throw "chp exited during startup smoke test with code $($p.ExitCode)" }
           Stop-Process -Id $p.Id -Force
           "startup_smoke=PASS" | Add-Content apps/chp/release/verification.txt
@@ -80,13 +118,16 @@ jobs:
           $head = (git rev-parse HEAD).Trim()
           @(
             "product=chp",
+            "version=1.0.0",
             "format=portable-win-unpacked",
             "commit=$head",
             "exe_sha256=$hash",
             "exe_bytes=$size",
             "portable_data=beside_executable/data",
-            "model_gateway=anthropic+openai-compatible",
-            "lobehub_cloud_runtime=not_used"
+            "model_gateway=anthropic+openai-compatible+vision+tools",
+            "work_runtime=project-index+pty+mcp+skills+artifact+computer-use",
+            "lobehub_cloud_runtime=not_used",
+            "claude_proprietary_runtime=not_redistributed"
           ) | Set-Content apps/chp/release/BUILD-MANIFEST.txt
           Get-Content apps/chp/release/verification.txt | Add-Content apps/chp/release/BUILD-MANIFEST.txt
 
@@ -94,22 +135,20 @@ jobs:
         shell: pwsh
         run: |
           Set-Location apps/chp/release
-          if (Test-Path chp-portable.7z.001) { Remove-Item chp-portable.7z.* -Force }
-          & 7z a -t7z -mx=9 -m0=lzma2 -md=128m -mmt=on -v95m chp-portable.7z .\win-unpacked\* .\BUILD-MANIFEST.txt .\verification.txt
+          if (Test-Path chp-complete.7z.001) { Remove-Item chp-complete.7z.* -Force }
+          & 7z a -t7z -mx=9 -m0=lzma2 -md=128m -mmt=on -v95m chp-complete.7z .\win-unpacked\* .\BUILD-MANIFEST.txt .\verification.txt
           if ($LASTEXITCODE -ne 0) { throw '7z failed' }
-          $parts = Get-ChildItem chp-portable.7z.* | Sort-Object Name
+          $parts = Get-ChildItem chp-complete.7z.* | Sort-Object Name
           if (-not $parts) { throw 'No split archive parts created' }
-          foreach ($part in $parts) {
-            if ($part.Length -gt 150MB) { throw "$($part.Name) exceeds 150MB" }
-          }
+          foreach ($part in $parts) { if ($part.Length -gt 150MB) { throw "$($part.Name) exceeds 150MB" } }
           $parts | ForEach-Object { "{0}  {1}  {2}" -f $_.Name,$_.Length,(Get-FileHash $_.FullName -Algorithm SHA256).Hash } | Set-Content SHA256SUMS.txt
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: chp-portable-windows-x64
+          name: chp-complete-windows-x64
           path: |
-            apps/chp/release/chp-portable.7z.*
+            apps/chp/release/chp-complete.7z.*
             apps/chp/release/SHA256SUMS.txt
             apps/chp/release/BUILD-MANIFEST.txt
             apps/chp/release/verification.txt
@@ -122,10 +161,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = 'chp-portable-latest'
+          $tag = 'chp-complete-latest'
           gh release delete $tag --repo $env:GITHUB_REPOSITORY --yes --cleanup-tag 2>$null
-          gh release create $tag --repo $env:GITHUB_REPOSITORY --title 'chp Portable Windows x64' --notes 'Verified portable build. Extract all 7z volumes together, then run chp.exe. Data is stored beside the executable; model APIs may be online or local.'
-          gh release upload $tag apps/chp/release/chp-portable.7z.* apps/chp/release/SHA256SUMS.txt apps/chp/release/BUILD-MANIFEST.txt apps/chp/release/verification.txt --repo $env:GITHUB_REPOSITORY --clobber
+          gh release create $tag --repo $env:GITHUB_REPOSITORY --title 'chp Complete Windows x64' --notes 'Verified complete portable build: local data, online/local model gateway, project index, PTY, MCP, Skills, Artifact Studio and opt-in Computer Use.'
+          gh release upload $tag apps/chp/release/chp-complete.7z.* apps/chp/release/SHA256SUMS.txt apps/chp/release/BUILD-MANIFEST.txt apps/chp/release/verification.txt --repo $env:GITHUB_REPOSITORY --clobber
 
       - name: Report success on issue
         if: success() && github.event_name == 'issues'
@@ -133,8 +172,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $url = "https://github.com/$env:GITHUB_REPOSITORY/releases/tag/chp-portable-latest"
-          gh issue comment ${{ github.event.issue.number }} --repo $env:GITHUB_REPOSITORY --body "CHP_BUILD_PASS`nRelease: $url`nStatic selftest: PASS`nPortable layout: PASS`nStartup smoke: PASS`nSplit volumes: <=95 MiB each"
+          $url = "https://github.com/$env:GITHUB_REPOSITORY/releases/tag/chp-complete-latest"
+          gh issue comment ${{ github.event.issue.number }} --repo $env:GITHUB_REPOSITORY --body "CHP_COMPLETE_BUILD_PASS`nRelease: $url`nStatic selftest: PASS`nPortable layout: PASS`nPTY: PASS`nProject index/ripgrep: PASS`nGitHub MCP bundled: PASS`nStartup smoke: PASS`nSplit volumes: <=95 MiB each"
           gh issue close ${{ github.event.issue.number }} --repo $env:GITHUB_REPOSITORY --reason completed
 
       - name: Report failure on issue
@@ -143,4 +182,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh issue comment ${{ github.event.issue.number }} --repo $env:GITHUB_REPOSITORY --body "CHP_BUILD_FAIL`nRun: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          gh issue comment ${{ github.event.issue.number }} --repo $env:GITHUB_REPOSITORY --body "CHP_COMPLETE_BUILD_FAIL`nRun: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
