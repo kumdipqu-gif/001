@@ -1,6 +1,10 @@
 appId: com.chp.desktop
 productName: chp
+copyright: chp
 asar: true
+asarUnpack:
+  - node_modules/node-pty/**/*
+  - node_modules/@vscode/ripgrep/bin/**/*
 directories:
   output: release
   buildResources: build
@@ -14,9 +18,17 @@ extraFiles:
     to: chp-api.json
   - from: data
     to: data
+    filter:
+      - '**/*'
+  - from: build/chp.ico
+    to: resources/chp.ico
+  - from: vendor
+    to: resources
+    filter:
+      - '**/*'
 win:
   executableName: chp
   icon: build/chp.ico
   target:
     - target: dir
-artifactName: chp-${version}-${arch}.${ext}
+artifactName: chp-complete-${version}-${arch}.${ext}
